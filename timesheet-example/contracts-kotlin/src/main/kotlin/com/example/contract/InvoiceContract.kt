@@ -22,12 +22,14 @@ class InvoiceContract : Contract {
         val ID = "com.example.contract.InvoiceContract"
     }
 
+    class Create(val contractor: Int, val company: Int, val rate: Double) : CommandData
+
     /**
      * The verify() function of all the states' contracts must not throw an exception for a transaction to be
      * considered valid.
      */
     override fun verify(tx: LedgerTransaction) {
-        val command = tx.commands.requireSingleCommand<Commands.Create>()
+        val command = tx.commands.requireSingleCommand<Create>()
         requireThat {
             // Generic constraints around the invoice transaction.
             "No inputs should be consumed when issuing an IOU." using (tx.inputs.isEmpty())
@@ -40,12 +42,5 @@ class InvoiceContract : Contract {
             "The Invoice's value must be non-negative." using (out.hoursWorked > 0)
             //"The contractor ${out.contractor} must be contracted to work with ${out.company}" using (rateOracle.query(out.contractor))
         }
-    }
-
-    /**
-     * This contract only implements one command, Create.
-     */
-    interface Commands : CommandData {
-        class Create : Commands
     }
 }

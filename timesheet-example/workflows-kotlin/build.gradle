@@ -6,7 +6,7 @@ apply plugin: 'net.corda.plugins.cordapp'
 apply plugin: 'net.corda.plugins.cordformation'
 apply plugin: 'net.corda.plugins.quasar-utils'
 
-jar.baseName = "cordapp-example-workflows"
+jar.baseName = "timesheet-example-workflows"
 
 cordapp {
     targetPlatformVersion corda_platform_version.toInteger()
