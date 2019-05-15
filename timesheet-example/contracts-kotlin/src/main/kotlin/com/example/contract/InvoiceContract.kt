@@ -1,7 +1,11 @@
 package com.example.contract
 
 import com.example.state.InvoiceState
-import net.corda.core.contracts.*
+import net.corda.core.contracts.CommandData
+import net.corda.core.contracts.Contract
+import net.corda.core.contracts.requireSingleCommand
+import net.corda.core.contracts.requireThat
+import net.corda.core.identity.Party
 import net.corda.core.transactions.LedgerTransaction
 
 /**
@@ -22,7 +26,8 @@ class InvoiceContract : Contract {
         val ID = "com.example.contract.InvoiceContract"
     }
 
-    class Create(val contractor: Int, val company: Int, val rate: Double) : CommandData
+    // Commands signed by oracles must contain the facts the oracle is attesting to.
+    class Create(val contractor: Party, val company: Party, val rate: Double) : CommandData
 
     /**
      * The verify() function of all the states' contracts must not throw an exception for a transaction to be
@@ -32,14 +37,14 @@ class InvoiceContract : Contract {
         val command = tx.commands.requireSingleCommand<Create>()
         requireThat {
             // Generic constraints around the invoice transaction.
-            "No inputs should be consumed when issuing an IOU." using (tx.inputs.isEmpty())
+            "No inputs should be consumed when issuing an Invoice." using (tx.inputs.isEmpty())
             "Only one output state should be created." using (tx.outputs.size == 1)
             val out = tx.outputsOfType<InvoiceState>().single()
             "The lender and the borrower cannot be the same entity." using (out.contractor != out.company)
             "All of the participants must be signers." using (command.signers.containsAll(out.participants.map { it.owningKey }))
 
             // Invoice-specific constraints.
-            "The Invoice's value must be non-negative." using (out.hoursWorked > 0)
+            "The Invoice's value must be non-negative. (was ${out.hoursWorked})" using (out.hoursWorked > 0)
             //"The contractor ${out.contractor} must be contracted to work with ${out.company}" using (rateOracle.query(out.contractor))
         }
     }

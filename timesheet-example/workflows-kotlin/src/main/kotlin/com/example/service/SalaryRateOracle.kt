@@ -1,15 +1,15 @@
 package com.example.service
 
+import com.example.contract.InvoiceContract
 import javafx.util.Pair
+import liquibase.util.csv.opencsv.CSVReader
 import net.corda.core.contracts.Command
 import net.corda.core.crypto.TransactionSignature
-import net.corda.core.node.ServiceHub
+import net.corda.core.node.AppServiceHub
 import net.corda.core.node.services.CordaService
 import net.corda.core.serialization.SingletonSerializeAsToken
 import net.corda.core.transactions.FilteredTransaction
-import com.example.contract.InvoiceContract
-import net.corda.core.contracts.CommandData
-import net.corda.core.serialization.CordaSerializable
+import java.io.FileReader
 import java.util.*
 
 // We sub-class 'SingletonSerializeAsToken' to ensure that instances of this class are never serialised by Kryo.
@@ -22,22 +22,24 @@ import java.util.*
 // reference to the type of the object. When flows are de-serialised, the token is used to connect up the object
 // reference to an instance which should already exist on the stack.
 @CordaService
-class SalaryRateOracle(val services: ServiceHub) : SingletonSerializeAsToken() {
+class SalaryRateOracle(val services: AppServiceHub) : SingletonSerializeAsToken() {
     private val myKey = services.myInfo.legalIdentities.first().owningKey
 
-    @CordaSerializable
-    data class RateOf(val contractor: Int, val company: Int)
-
-    @CordaSerializable
-    data class Rate(val of: RateOf, val rate: Double?) : CommandData
-
     // A table of (contractor, company) -> salary expectations (per hour)
-    val salaryTable : HashMap<Pair<Int, Int>, Double> = hashMapOf(
-            Pair(1, 1) to 10.0,
-            Pair(1, 2) to 8.0)
+    private val payRateTable: HashMap<Pair<String, String>, Double> = hashMapOf()
+
+    init {
+        val reader = CSVReader(FileReader("./payRates.csv"))
+        val lines = reader.readAll()
+        for (line in lines) {
+            payRateTable.put(Pair(line[0], line[1]), line[2].toDouble())
+        }
+    }
 
     // Returns the salary for the given contractor at that company
-    fun query(rateOf: RateOf): Rate = Rate(rateOf, salaryTable[Pair(rateOf.contractor, rateOf.company)])
+    // TODO: Figure out what to do about missing pay rates
+    fun query(rateOf: RateOf): Rate =
+            Rate(rateOf, payRateTable[Pair(rateOf.contractor.name.organisation, rateOf.company.name.organisation)]!!)
 
     // Signs over a transaction if the specified Nth prime for a particular N is correct.
     // This function takes a filtered transaction which is a partial Merkle tree. Any parts of the transaction which
@@ -53,9 +55,9 @@ class SalaryRateOracle(val services: ServiceHub) : SingletonSerializeAsToken() {
          *  - Has the oracle listed as a signer
          */
         fun isCommandWithCorrectRateAndIAmSigner(elem: Any) = when {
-            elem is Command<*> && elem.value is Rate -> {
-                val cmdData = elem.value as Rate
-                myKey in elem.signers && query(cmdData.of).rate == cmdData.rate
+            elem is Command<*> && elem.value is InvoiceContract.Create -> {
+                val cmdData = elem.value as InvoiceContract.Create
+                myKey in elem.signers && query(RateOf(cmdData.contractor, cmdData.company)).value == cmdData.rate
             }
             else -> false
         }

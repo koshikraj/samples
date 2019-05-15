@@ -11,6 +11,7 @@ import net.corda.core.identity.Party
 import net.corda.core.schemas.MappedSchema
 import net.corda.core.schemas.PersistentState
 import net.corda.core.schemas.QueryableState
+import java.time.LocalDate
 
 /**
  * The state object recording invoice of billable hours from the contractor
@@ -23,14 +24,16 @@ import net.corda.core.schemas.QueryableState
  * @param company the party receiving and approving the invoice.
  */
 @BelongsToContract(InvoiceContract::class)
-data class InvoiceState(val hoursWorked: Int,
-                        val date: Int,
+data class InvoiceState(val date: LocalDate,
+                        val hoursWorked: Int,
+                        val rate: Double,
                         val contractor: Party,
                         val company: Party,
+                        val oracle: Party,
                         override val linearId: UniqueIdentifier = UniqueIdentifier()):
         LinearState, QueryableState {
     /** The public keys of the involved parties. */
-    override val participants: List<AbstractParty> get() = listOf(contractor, company)
+    override val participants: List<AbstractParty> get() = listOf(contractor, company, oracle)
 
     override fun generateMappedObject(schema: MappedSchema): PersistentState {
         return when (schema) {
@@ -39,6 +42,7 @@ data class InvoiceState(val hoursWorked: Int,
                     this.company.name.toString(),
                     this.date,
                     this.hoursWorked,
+                    this.rate,
                     this.linearId.id
             )
             else -> throw IllegalArgumentException("Unrecognised schema $schema")
