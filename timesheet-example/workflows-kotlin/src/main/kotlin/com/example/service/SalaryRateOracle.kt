@@ -55,8 +55,8 @@ class SalaryRateOracle(val services: AppServiceHub) : SingletonSerializeAsToken(
          *  - Has the oracle listed as a signer
          */
         fun isCommandWithCorrectRateAndIAmSigner(elem: Any) = when {
-            elem is Command<*> && elem.value is InvoiceContract.Create -> {
-                val cmdData = elem.value as InvoiceContract.Create
+            elem is Command<*> && elem.value is InvoiceContract.Commands.Create -> {
+                val cmdData = elem.value as InvoiceContract.Commands.Create
                 myKey in elem.signers && query(RateOf(cmdData.contractor, cmdData.company)).value == cmdData.rate
             }
             else -> false

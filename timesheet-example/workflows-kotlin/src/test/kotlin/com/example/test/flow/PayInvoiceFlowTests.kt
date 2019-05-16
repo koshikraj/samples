@@ -1,6 +1,7 @@
 package com.example.test.flow
 
-import com.example.flow.InvoiceFlow
+import com.example.flow.IssueInvoiceFlow
+import com.example.flow.PayInvoiceFlow
 import com.example.state.InvoiceState
 import net.corda.core.contracts.TransactionVerificationException
 import net.corda.core.identity.CordaX500Name
@@ -18,7 +19,7 @@ import java.time.LocalDate
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-class InvoiceFlowTests {
+class PayInvoiceFlowTests {
     private lateinit var network: MockNetwork
     private lateinit var a: StartedMockNode
     private lateinit var b: StartedMockNode
@@ -36,7 +37,7 @@ class InvoiceFlowTests {
         b = network.createPartyNode()
         o = network.createNode(oracleName)
         // For real nodes this happens automatically, but we have to manually register the flow for tests.
-        listOf(a, b).forEach { it.registerInitiatedFlow(InvoiceFlow.Acceptor::class.java) }
+        listOf(a, b).forEach { it.registerInitiatedFlow(IssueInvoiceFlow.Acceptor::class.java) }
         network.runNetwork()
         today = LocalDate.now()
     }
@@ -48,7 +49,8 @@ class InvoiceFlowTests {
 
     @Test
     fun `flow rejects invalid invoices`() {
-        val flow = InvoiceFlow.Initiator(-1, today, b.info.singleIdentity())
+        val invoice = InvoiceState(today, -1, 10.0, a.info.singleIdentity(), b.info.singleIdentity(), o.info.singleIdentity())
+        val flow = PayInvoiceFlow.Initiator(invoice, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
 
@@ -58,7 +60,7 @@ class InvoiceFlowTests {
 
     @Test
     fun `SignedTransaction returned by the flow is signed by the initiator`() {
-        val flow = InvoiceFlow.Initiator(1, today, b.info.singleIdentity())
+        val flow = IssueInvoiceFlow.Initiator(1, today, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
 
@@ -68,7 +70,7 @@ class InvoiceFlowTests {
 
     @Test
     fun `SignedTransaction returned by the flow is signed by the acceptor`() {
-        val flow = InvoiceFlow.Initiator(1, today, b.info.singleIdentity())
+        val flow = IssueInvoiceFlow.Initiator(1, today, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
 
@@ -78,7 +80,7 @@ class InvoiceFlowTests {
 
     @Test
     fun `flow records a transaction in both parties' transaction storage`() {
-        val flow = InvoiceFlow.Initiator(1, today, b.info.singleIdentity())
+        val flow = IssueInvoiceFlow.Initiator(1, today, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
         val signedTx = future.getOrThrow()
@@ -92,7 +94,7 @@ class InvoiceFlowTests {
     @Test
     fun `recorded transaction has no inputs and a single output, the input invoice`() {
         val invoiceValue = 1
-        val flow = InvoiceFlow.Initiator(invoiceValue, today, b.info.singleIdentity())
+        val flow = IssueInvoiceFlow.Initiator(invoiceValue, today, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
         val signedTx = future.getOrThrow()
@@ -113,7 +115,7 @@ class InvoiceFlowTests {
     @Test
     fun `flow records the correct invoice in both parties' vaults`() {
         val invoiceValue = 1
-        val flow = InvoiceFlow.Initiator(1, today, b.info.singleIdentity())
+        val flow = IssueInvoiceFlow.Initiator(1, today, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
         future.getOrThrow()

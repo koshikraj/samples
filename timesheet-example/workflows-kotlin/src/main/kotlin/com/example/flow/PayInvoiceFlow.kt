@@ -2,21 +2,20 @@ package com.example.flow
 
 import co.paralleluniverse.fibers.Suspendable
 import com.example.contract.InvoiceContract
-import com.example.flow.InvoiceFlow.Acceptor
-import com.example.flow.InvoiceFlow.Initiator
-import com.example.service.RateOf
+import com.example.flow.PayInvoiceFlow.Acceptor
+import com.example.flow.PayInvoiceFlow.Initiator
 import com.example.state.InvoiceState
 import net.corda.core.contracts.Command
 import net.corda.core.contracts.requireThat
 import net.corda.core.flows.*
-import net.corda.core.identity.CordaX500Name
 import net.corda.core.identity.Party
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.ProgressTracker.Step
-import java.time.LocalDate
-import java.util.function.Predicate
+import net.corda.finance.POUNDS
+import net.corda.finance.flows.CashPaymentReceiverFlow
+import net.corda.finance.workflows.asset.CashUtils
 
 /**
  * This flow allows two parties (the [Initiator] and the [Acceptor]) to come to an agreement about the IOU encapsulated
@@ -29,37 +28,27 @@ import java.util.function.Predicate
  *
  * All methods called within the [FlowLogic] sub-class need to be annotated with the @Suspendable annotation.
  */
-object InvoiceFlow {
+object PayInvoiceFlow {
     @InitiatingFlow
     @StartableByRPC
-    class Initiator(private val hoursWorked: Int,
-                    private val date: LocalDate,
+    class Initiator(private val invoice: InvoiceState,
                     private val otherParty: Party) : FlowLogic<SignedTransaction>() {
         /**
          * The progress tracker checkpoints each stage of the flow and outputs the specified messages when each
          * checkpoint is reached in the code. See the 'progressTracker.currentStep' expressions within the call() function.
          */
         companion object {
-            object DETERMINING_SALARY : Step("Determining salary rate for contractor/company.")
             object GENERATING_TRANSACTION : Step("Generating transaction based on new hours submission.")
             object VERIFYING_TRANSACTION : Step("Verifying contract constraints.")
             object SIGNING_TRANSACTION : Step("Signing transaction with our private key.")
-            object ORACLE_SIGNS : Step("Requesting oracle signature.")
-            object GATHERING_SIGS : Step("Gathering the counterparty's signature.") {
-                override fun childProgressTracker() = CollectSignaturesFlow.tracker()
-            }
-
             object FINALISING_TRANSACTION : Step("Obtaining notary signature and recording transaction.") {
                 override fun childProgressTracker() = FinalityFlow.tracker()
             }
 
             fun tracker() = ProgressTracker(
-                    DETERMINING_SALARY,
                     GENERATING_TRANSACTION,
                     VERIFYING_TRANSACTION,
                     SIGNING_TRANSACTION,
-                    ORACLE_SIGNS,
-                    GATHERING_SIGS,
                     FINALISING_TRANSACTION
             )
         }
@@ -74,25 +63,20 @@ object InvoiceFlow {
             // Obtain a reference to the notary we want to use.
             val notary = serviceHub.networkMapCache.notaryIdentities[0]
 
-            // Stage 1.
-            progressTracker.currentStep = DETERMINING_SALARY
-            // Query the SalaryRateOracle for the billable rate
-            val oracleName = CordaX500Name("Oracle", "London","GB")
-            val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
-                    ?: throw IllegalArgumentException("Requested oracle $oracleName not found on network.")
-
-            val rate = subFlow(QueryRate(RateOf(serviceHub.myInfo.legalIdentities[0], otherParty), oracle))
-
             // Stage 2.
             progressTracker.currentStep = GENERATING_TRANSACTION
             // Generate an unsigned transaction.
-            val contractor = serviceHub.myInfo.legalIdentities.first()
-            val invoiceState = InvoiceState(date, hoursWorked, rate.value, contractor, otherParty, oracle)
-            val txCommand = Command(InvoiceContract.Create(contractor, otherParty, rate.value), invoiceState.participants.map { it.owningKey })
-            val txBuilder = TransactionBuilder(notary)
-                    .addOutputState(invoiceState, InvoiceContract.ID)
-                    .addCommand(txCommand)
+            //val txCommand = Command(InvoiceContract.Pay(contractor, otherParty, rate.value), invoiceState.participants.map { it.owningKey })
+            val paymentAmount = POUNDS(invoice.hoursWorked * invoice.rate)
 
+            val txCommand = Command(InvoiceContract.Commands.Pay(), invoice.participants.map { it.owningKey })
+            val txBuilder = TransactionBuilder(notary)
+                    .addOutputState(invoice.copy(paid = true), InvoiceContract.ID)
+                    .addCommand(txCommand)
+            // Add our payment to the contractor
+            CashUtils.generateSpend(serviceHub, txBuilder, paymentAmount, otherParty)
+
+            val otherPartySession = initiateFlow(otherParty)
             // Stage 3.
             progressTracker.currentStep = VERIFYING_TRANSACTION
             // Verify that the transaction is valid.
@@ -101,52 +85,31 @@ object InvoiceFlow {
             // Stage 4.
             progressTracker.currentStep = SIGNING_TRANSACTION
             // Sign the transaction.
-            val partSignedTx = serviceHub.signInitialTransaction(txBuilder)
+            val signedTx = serviceHub.signInitialTransaction(txBuilder)
 
-            // Stage 6.
-            progressTracker.currentStep = ORACLE_SIGNS
-            // Have the oracle sign the transaction
-            val ftx = partSignedTx.buildFilteredTransaction(Predicate {
-                when (it) {
-                    is Command<*> -> oracle.owningKey in it.signers && it.value is InvoiceContract.Create
-                    else -> false
-                }
-            })
-            partSignedTx.withAdditionalSignature(subFlow(SignRate(txBuilder, oracle, ftx)))
-
-            // Stage 6.
-            progressTracker.currentStep = GATHERING_SIGS
-            // Send the state to the counterparty, and receive it back with their signature.
-            val otherPartySession = initiateFlow(otherParty)
-            val oracleSession = initiateFlow(oracle)
-            val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx, setOf(otherPartySession, oracleSession), GATHERING_SIGS.childProgressTracker()))
-
-            // Stage 7.
             progressTracker.currentStep = FINALISING_TRANSACTION
             // Notarise and record the transaction in all parties' vaults.
-            return subFlow(FinalityFlow(fullySignedTx, setOf(otherPartySession, oracleSession), FINALISING_TRANSACTION.childProgressTracker()))
+            return subFlow(FinalityFlow(signedTx, otherPartySession))
         }
     }
 
     @InitiatingFlow
     @InitiatedBy(Initiator::class)
     class Acceptor(val otherPartySession: FlowSession) : FlowLogic<SignedTransaction>() {
+        lateinit var invoice : InvoiceState
         @Suspendable
         override fun call(): SignedTransaction {
             val signTransactionFlow = object : SignTransactionFlow(otherPartySession) {
                 override fun checkTransaction(stx: SignedTransaction) = requireThat {
                     val output = stx.tx.outputs.single().data
                     "This must be an invoice transaction." using (output is InvoiceState)
-                    val invoice = output as InvoiceState
+                    invoice = output as InvoiceState
                     "Invoices with a value over 10 aren't accepted." using (invoice.hoursWorked <= 10)
                 }
             }
             val txId = subFlow(signTransactionFlow).id
 
-            // TODO: Verify the rate with the oracle
-
-            // TODO: Generate payment here
-            //return subFlow(CashIssueAndPaymentFlow(amount, recipient, anonymous, notary))
+            subFlow(CashPaymentReceiverFlow(otherPartySession))
 
             return subFlow(ReceiveFinalityFlow(otherPartySession, expectedTxId = txId))
         }

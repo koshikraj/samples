@@ -11,7 +11,7 @@ import net.corda.core.utilities.unwrap
 import com.example.service.SalaryRateOracle
 
 // The oracle flow to sign salary rate lookups
-@InitiatedBy(InvoiceFlow.Acceptor::class)
+@InitiatedBy(IssueInvoiceFlow.Acceptor::class)
 class SignHandler(val session: FlowSession) : FlowLogic<Unit>() {
     companion object {
         object RECEIVING : ProgressTracker.Step("Receiving sign request.")

@@ -30,6 +30,7 @@ data class InvoiceState(val date: LocalDate,
                         val contractor: Party,
                         val company: Party,
                         val oracle: Party,
+                        val paid: Boolean = false,
                         override val linearId: UniqueIdentifier = UniqueIdentifier()):
         LinearState, QueryableState {
     /** The public keys of the involved parties. */
