@@ -49,7 +49,7 @@ class PayInvoiceFlowTests {
 
     @Test
     fun `flow rejects invalid invoices`() {
-        val invoice = InvoiceState(today, -1, 10.0, a.info.singleIdentity(), b.info.singleIdentity(), o.info.singleIdentity())
+        val invoice = InvoiceState(today, 15, 10.0, a.info.singleIdentity(), b.info.singleIdentity(), o.info.singleIdentity())
         val flow = PayInvoiceFlow.Initiator(invoice, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()

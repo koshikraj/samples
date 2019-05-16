@@ -74,9 +74,8 @@ object PayInvoiceFlow {
                     .addOutputState(invoice.copy(paid = true), InvoiceContract.ID)
                     .addCommand(txCommand)
             // Add our payment to the contractor
-            CashUtils.generateSpend(serviceHub, txBuilder, paymentAmount, otherParty)
+            CashUtils.generateSpend(serviceHub, txBuilder, paymentAmount, serviceHub.myInfo.legalIdentitiesAndCerts[0], otherParty)
 
-            val otherPartySession = initiateFlow(otherParty)
             // Stage 3.
             progressTracker.currentStep = VERIFYING_TRANSACTION
             // Verify that the transaction is valid.
@@ -89,7 +88,7 @@ object PayInvoiceFlow {
 
             progressTracker.currentStep = FINALISING_TRANSACTION
             // Notarise and record the transaction in all parties' vaults.
-            return subFlow(FinalityFlow(signedTx, otherPartySession))
+            return subFlow(FinalityFlow(signedTx, initiateFlow(otherParty)))
         }
     }
 

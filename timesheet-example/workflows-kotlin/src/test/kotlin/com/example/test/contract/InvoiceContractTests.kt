@@ -14,6 +14,7 @@ class InvoiceContractTests {
     private val megaCorp = TestIdentity(CordaX500Name("MegaCorp", "London", "GB"))
     private val contractor = TestIdentity(CordaX500Name("Contractor", "New York", "US"))
     private val oracle = TestIdentity(CordaX500Name("Oracle", "New York", "US"))
+    private val signers = listOf(megaCorp.publicKey, contractor.publicKey, oracle.publicKey)
     private val date = LocalDate.now()
     private val rate = 10.0
     private val invoiceValue = 1
@@ -24,7 +25,7 @@ class InvoiceContractTests {
             transaction {
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
                 fails()
-                command(signers, InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(signers, InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 verifies()
             }
         }
@@ -36,7 +37,7 @@ class InvoiceContractTests {
             transaction {
                 input(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
-                command(signers, InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(signers, InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 `fails with`("No inputs should be consumed when issuing an invoice.")
             }
         }
@@ -48,7 +49,7 @@ class InvoiceContractTests {
             transaction {
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
-                command(signers, InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(signers, InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 `fails with`("Only one output state should be created.")
             }
         }
@@ -59,7 +60,7 @@ class InvoiceContractTests {
         ledgerServices.ledger {
             transaction {
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
-                command(listOf(megaCorp.publicKey, oracle.publicKey), InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(listOf(megaCorp.publicKey, oracle.publicKey), InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 `fails with`("All of the participants must be signers.")
             }
         }
@@ -70,7 +71,7 @@ class InvoiceContractTests {
         ledgerServices.ledger {
             transaction {
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
-                command(listOf(contractor.publicKey, oracle.publicKey), InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(listOf(contractor.publicKey, oracle.publicKey), InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 `fails with`("All of the participants must be signers.")
             }
         }
@@ -81,7 +82,7 @@ class InvoiceContractTests {
         ledgerServices.ledger {
             transaction {
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, contractor.party, megaCorp.party, oracle.party))
-                command(listOf(contractor.publicKey, megaCorp.publicKey), InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(listOf(contractor.publicKey, megaCorp.publicKey), InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 `fails with`("All of the participants must be signers.")
             }
         }
@@ -92,19 +93,18 @@ class InvoiceContractTests {
         ledgerServices.ledger {
             transaction {
                 output(InvoiceContract.ID, InvoiceState(date, invoiceValue, rate, megaCorp.party, megaCorp.party, oracle.party))
-                command(signers, InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(signers, InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 `fails with`("The lender and the borrower cannot be the same entity.")
             }
         }
     }
 
-    val signers = listOf(megaCorp.publicKey, contractor.publicKey, oracle.publicKey)
     @Test
     fun `cannot create negative-value Invoices`() {
         ledgerServices.ledger {
             transaction {
                 output(InvoiceContract.ID, InvoiceState(date, -1, rate, contractor.party, megaCorp.party, oracle.party))
-                command(signers, InvoiceContract.Create(contractor.party, megaCorp.party, rate))
+                command(signers, InvoiceContract.Commands.Create(contractor.party, megaCorp.party, rate))
                 `fails with`("The Invoice's value must be non-negative.")
             }
         }
